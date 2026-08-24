@@ -69,7 +69,7 @@ router.post('/item', (req, res) => {
             id: db.proximo_id++,
             codigo,
             nome: (req.body.nome || '').trim(),
-            categoria: categoriaDoCodigo(codigo),
+            categoria: (req.body.categoria || '').trim() || categoriaDoCodigo(codigo),
             preco: parseFloat(req.body.preco) || 0,
             unidade: (req.body.unidade || 'UN').trim(),
             fator: Math.max(1, parseInt(req.body.fator) || 1),
@@ -106,7 +106,11 @@ router.put('/item/:id', (req, res) => {
             ...atual,
             codigo: novoCodigo,
             nome: req.body.nome !== undefined ? req.body.nome.trim() : atual.nome,
-            categoria: categoriaDoCodigo(novoCodigo),
+            // Categoria explícita (select) tem prioridade; senão MANTÉM a atual
+            // (não reseta pelo código — era o bug que jogava o produto de volta).
+            categoria: (req.body.categoria !== undefined && String(req.body.categoria).trim())
+                ? String(req.body.categoria).trim()
+                : (atual.categoria || categoriaDoCodigo(novoCodigo)),
             preco: req.body.preco !== undefined ? (parseFloat(req.body.preco) || 0) : atual.preco,
             unidade: req.body.unidade !== undefined ? req.body.unidade.trim() : atual.unidade,
             fator: req.body.fator !== undefined ? Math.max(1, parseInt(req.body.fator) || 1) : (atual.fator || 1),
@@ -157,6 +161,26 @@ router.put('/categoria/renomear', (req, res) => {
         }
         salvarProdutos(db);
         res.json({ success: true, atualizados, categoria_nova });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// DELETE /api/catalogo/categoria/:nome — remove a categoria movendo seus
+// produtos para "Sem categoria" (os produtos NÃO são apagados).
+router.delete('/categoria/:nome', (req, res) => {
+    try {
+        const nome = req.params.nome;
+        const db = lerProdutos();
+        let movidos = 0;
+        db.produtos.forEach(p => {
+            if ((p.categoria || 'Sem categoria') === nome) {
+                p.categoria = '';
+                movidos++;
+            }
+        });
+        salvarProdutos(db);
+        res.json({ success: true, movidos });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }

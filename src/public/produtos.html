@@ -439,7 +439,12 @@
                 <label>Código</label>
                 <input type="text" class="modal-input" id="modalCodigo" placeholder="Ex: MFSS-006"
                        style="font-family: var(--mono);">
-                <span style="font-size:10px; color:#555; margin-top:4px; display:block;">A categoria é derivada automaticamente do prefixo do código</span>
+            </div>
+            <div class="modal-field">
+                <label>Categoria</label>
+                <select class="modal-input" id="modalCategoria" onchange="onCategoriaSelectChange()"></select>
+                <input type="text" class="modal-input" id="modalCategoriaNova" placeholder="Nome da nova categoria"
+                       style="display:none; margin-top:6px;">
             </div>
             <div class="modal-field">
                 <label>Nome</label>
@@ -572,6 +577,9 @@
                 <button class="cat-rename-btn" onclick="renomearCategoria('${esc(cat)}')" title="Renomear categoria">
                     <i data-lucide="pencil"></i>
                 </button>
+                <button class="cat-rename-btn" onclick="excluirCategoria('${esc(cat)}')" title="Excluir categoria">
+                    <i data-lucide="trash-2"></i>
+                </button>
             </td></tr>`;
 
             itens.forEach(p => {
@@ -633,6 +641,7 @@
         document.getElementById('modalUnidade').value = 'UN';
         document.getElementById('modalFator').value = '1';
         document.getElementById('modalObs').value = '';
+        preencherSelectCategoria(document.getElementById('filterCategoria').value || '');
         document.getElementById('modalNovo').classList.add('active');
         document.getElementById('modalCodigo').focus();
     }
@@ -648,6 +657,7 @@
         document.getElementById('modalUnidade').value = p.unidade || 'UN';
         document.getElementById('modalFator').value = p.fator || 1;
         document.getElementById('modalObs').value = p.observacoes || '';
+        preencherSelectCategoria(p.categoria || '');
         document.getElementById('modalNovo').classList.add('active');
         document.getElementById('modalNome').focus();
     }
@@ -664,8 +674,13 @@
             preco: document.getElementById('modalPreco').value,
             unidade: document.getElementById('modalUnidade').value.trim() || 'UN',
             fator: Math.max(1, parseInt(document.getElementById('modalFator').value) || 1),
+            categoria: categoriaEscolhida(),
             observacoes: document.getElementById('modalObs').value.trim()
         };
+        if (dados.categoria === null) {
+            MF.alert('Escolha ou digite uma categoria', 'warning', 'Campo obrigatório');
+            return;
+        }
         if (!dados.nome) {
             MF.alert('Preencha o nome', 'warning', 'Campo obrigatório');
             return;
@@ -744,6 +759,52 @@
     });
 
     // ── RENOMEAR CATEGORIA ──
+    // Popula o select de categoria do modal (categorias existentes + criar nova)
+    function preencherSelectCategoria(atual) {
+        const sel = document.getElementById('modalCategoria');
+        const cats = categorias.slice();
+        if (atual && !cats.includes(atual)) cats.unshift(atual);
+        sel.innerHTML = cats.map(c => `<option value="${esc(c)}" ${c === atual ? 'selected' : ''}>${esc(c)}</option>`).join('')
+            + `<option value="__nova__">➕ Nova categoria...</option>`;
+        if (!atual && !cats.length) sel.value = '__nova__';
+        const nova = document.getElementById('modalCategoriaNova');
+        nova.value = '';
+        nova.style.display = sel.value === '__nova__' ? 'block' : 'none';
+    }
+
+    function onCategoriaSelectChange() {
+        const nova = document.getElementById('modalCategoriaNova');
+        const ehNova = document.getElementById('modalCategoria').value === '__nova__';
+        nova.style.display = ehNova ? 'block' : 'none';
+        if (ehNova) nova.focus();
+    }
+
+    // Retorna a categoria escolhida, ou null se "nova" sem nome
+    function categoriaEscolhida() {
+        const sel = document.getElementById('modalCategoria').value;
+        if (sel === '__nova__') {
+            const nome = document.getElementById('modalCategoriaNova').value.trim();
+            return nome || null;
+        }
+        return sel;
+    }
+
+    async function excluirCategoria(cat) {
+        const qtd = todosProdutos.filter(p => (p.categoria || 'Sem categoria') === cat).length;
+        const ok = await MF.confirm(
+            `Excluir a categoria "${cat}"?\n\n${qtd} produto(s) vão para "Sem categoria" (os produtos NÃO são apagados).`,
+            { title: 'Excluir categoria', confirmText: 'Excluir', danger: true }
+        );
+        if (!ok) return;
+        try {
+            const res = await fetch(`/api/catalogo/categoria/${encodeURIComponent(cat)}`, { method: 'DELETE' });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error);
+            MF.toast(`Categoria excluída. ${json.movidos} produto(s) em "Sem categoria".`);
+            carregarDados();
+        } catch (err) { MF.alert('Erro: ' + err.message); }
+    }
+
     async function renomearCategoria(categoriaAtual) {
         const nova = await MF.prompt(`Renomear categoria "${categoriaAtual}" para:`, categoriaAtual);
         if (!nova || nova.trim() === categoriaAtual) return;
